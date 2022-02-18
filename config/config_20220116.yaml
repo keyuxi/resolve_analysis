@@ -1,0 +1,15 @@
+# === Experiment-dependent configurations === #
+dataDir:
+    /home/users/kyx/gs/resolve/data/
+slides:
+    # directories where all the resolve results files are located
+    # one for each slide
+    # relative to dataDir
+    # also the prefix to file names
+    - 32801-slideC
+    - 32801-slideD
+
+# ====== Environment Configurations =====
+baysor:
+    # location of the baysor executable file
+    /oak/stanford/groups/wjg/kyx/software/Baysor/bin/Baysor
