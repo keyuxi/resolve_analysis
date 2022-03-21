@@ -1,0 +1,142 @@
+import numpy as np
+import pandas as pd
+# import scanpy as sc
+import matplotlib.pyplot as plt
+import os, json
+import seaborn as sns
+# import anndata
+# from anndata import AnnData
+import scipy.stats as stats
+from skimage.io import imread
+sns.set_style('ticks')
+sns.set_context('paper')
+
+def save_fig(filename, fig=None):
+    if fig is None:
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+    else:
+        fig.savefig(filename, dpi=300, bbox_inches='tight')
+
+
+def adjust_image(image, down_sample=1):
+    return np.rot90(np.fliplr(image[::down_sample, ::down_sample]), k=1)
+
+
+def plot_slide(samples, adata_all, slide2plot='C', figname=None):
+    slide_samples = samples.query('slide == "%s"'%slide2plot)#['sliceID']
+
+    fig, ax = plt.subplots(4, 2, figsize=(12,20))
+    
+    for i,letter in enumerate(['A', 'B', 'C', 'D']):
+        for j,number in enumerate([1, 2]):
+            position = '%s%d'%(letter, number)
+
+            if position in slide_samples['slice'].values:
+                
+                _ = sc.pl.embedding(adata_all[adata_all.obs['sample'] == 'slide%s_%s' % (slide2plot, position),:],
+                                     basis="spatial", color="clusters", ax=ax[i,j], show=False)
+                ax[i,j].set_title(position)
+    plt.suptitle('slide%s'%slide2plot)
+    
+    if figname is None:
+        figname = './fig/slide%s_spatial.pdf'%slide2plot
+    save_fig(figname, fig)
+
+
+def count_gene_slide(samples, gene, adata_all, slide='C', use_raw=True, percentile=None, cutoff=None, figname=None):
+    slide_samples = samples.query('slide == "%s"'%slide)#['sliceID']
+
+    if percentile is not None:
+        if use_raw:
+            cutoff = np.percentile(adata_all[adata_all.obs['slide'] == slide, adata_all.var.index == gene].layers['raw'], percentile)
+        else:
+            cutoff = np.percentile(adata_all[adata_all.obs['slide'] == slide, adata_all.var.index == gene].X, percentile)
+            
+        print('cutoff:', cutoff)
+    elif cutoff is None:
+        raise ValueError('Either percentile or absolute cutoff should be given')
+    
+    fig, ax = plt.subplots(4, 2, figsize=(12,20))
+    
+    for i,letter in enumerate(['A', 'B', 'C', 'D']):
+        for j,number in enumerate([1, 2]):
+            position = '%s%d'%(letter, number)
+
+            if position in slide_samples['slice'].values:
+                adata = adata_all[adata_all.obs['sample'] == 'slide%s_%s' % (slide, position),:]
+                
+                gene_adata = adata[:, adata.var.index == gene]
+                
+                if use_raw:
+                    gene_counts = gene_adata.layers['raw'].flatten()
+                else:
+                    gene_counts = gene_adata.X.flatten()
+                
+                n_positive = np.sum(gene_counts > cutoff)
+                n_total = len(gene_counts)
+                
+                sns.ecdfplot(gene_counts, color='k', ax=ax[i,j])
+                ax[i,j].plot([0,np.max(gene_counts)], np.array([.01,.01])*percentile, 'r--')
+
+                ax[i,j].set_title('%s: %d/%d, %.2f%%' % (position, n_positive, n_total, 100*n_positive/n_total))
+                
+    plt.suptitle('slide%s, cutoff=%.2f' % (slide, cutoff))
+    
+    if figname is None:
+        figname = './fig/slide%s_%s_cell_count.pdf' % (slide, gene)
+    save_fig(figname, fig)
+
+
+def read_cell_data(cell):
+    """
+    Returns cropped DAPI, raw and molecule arrays from cell name,
+    eg. '3031-slideC_C1'
+    """
+    def get_ind(coor, max_coor):
+        crop_ind = min(max(0, coor), max_coor)
+        return int(crop_ind)
+    
+    m = 100
+
+    cell_id = int(cell.split('-')[0])
+    slide, tile = cell.split('-')[1].split('_')
+
+    segmentation_dir = './data/segmentation_32801-%s/%s'%(slide, tile)
+    spot_file = os.path.join(segmentation_dir, 'segmentation.csv')
+    cell_stats_file = os.path.join(segmentation_dir, 'segmentation_cell_stats.csv')
+    raw_data_dir = './data/32801-%s_submission'%slide
+    dapi_file = os.path.join(raw_data_dir, '32801-%s_%s_DAPI.tiff'%(slide, tile))
+    raw_file = os.path.join(raw_data_dir, '32801-%s_%s_raw.tiff'%(slide, tile))
+
+    cell_stats = pd.read_csv(cell_stats_file, index_col='cell')
+    cell_stat = cell_stats[cell_stats.index == cell_id]
+    spot = pd.read_csv(spot_file, sep=',').query('cell == %d'%cell_id)
+    
+    # print(xmin, xmax, ymin, ymax)
+    dapi = imread(dapi_file)
+    imx, imy = dapi.shape
+    xmin, xmax, ymin, ymax = get_ind(spot.y.min()-m, imx), get_ind(spot.y.max()+m, imx), get_ind(spot.x.min()-m, imy), get_ind(spot.x.max()+m, imy)
+    dapi = dapi[xmin:xmax, ymin:ymax]
+    raw = imread(raw_file)[xmin:xmax, ymin:ymax]
+    
+    spots = np.zeros_like(dapi)
+    for i,s in spot.iterrows():
+        try:
+            spots[int(s.y - xmin), int(s.x - ymin)] += 1
+        except:
+            print('crop indices: ', xmin, xmax, ymin, ymax)
+            print(imx, imy)
+        
+    return cell_stat, spot, spots, dapi, raw, (xmin, xmax, ymin, ymax)
+
+
+def plot_cell(cell):
+    cell_stat, spot, spots, dapi, raw, crop_ind = read_cell_data(cell)
+    fig, ax = plt.subplots(1, 3, figsize=(12,4), sharey=True, sharex=True)
+    # sns.scatterplot(y=spot.x-crop_ind[2], x=spot.y-crop_ind[0], hue=spot.gene, palette='tab20', ax=ax[0])
+    # if len(np.unique(spot.gene)) > 10:
+    #     ax[0].get_legend().remove()
+    ax[0].imshow(np.rot90(spots), vmax=0.2, cmap='gray')
+    ax[0].set_title('%s, area = %d'%(cell, cell_stat.area.values[0]))
+    ax[1].imshow(np.rot90(dapi), cmap='gray')
+    ax[2].imshow(np.rot90(raw), cmap='gray')
