@@ -8,6 +8,8 @@ import seaborn as sns
 # from anndata import AnnData
 import scipy.stats as stats
 from skimage.io import imread
+from tqdm import tqdm
+tqdm.pandas()
 sns.set_style('ticks')
 sns.set_context('paper')
 
@@ -140,3 +142,34 @@ def plot_cell(cell):
     ax[0].set_title('%s, area = %d'%(cell, cell_stat.area.values[0]))
     ax[1].imshow(np.rot90(dapi), cmap='gray')
     ax[2].imshow(np.rot90(raw), cmap='gray')
+
+
+def get_region_annotation(spatial, annotation, region_names):
+    """
+    Apply region annotation output from the GUI to adata.obs
+    via coordinates in adata.obsm['spatial']
+    """
+    X, Y = annotation.shape
+    ds = 10
+    idx = int(np.clip(spatial.x/ds, 0, X-1))
+    idy = int(np.clip(spatial.y/ds, 0, Y-1))
+    region_id = annotation[idx, idy]
+    return region_names.loc[region_id,:]
+
+def add_region_annotation_to_adata(adata, annotation_file, region_names_file):
+    """
+    Args:
+        adata - Anndata object
+        annotation_file - e.g. './resolve_analysis/resolve/slideC_A1.npy'
+        regions_names_file - e.g. './resolve_analysis/resolve/region_names.csv'
+    Returns:
+        adata - Anndata object with updated adata.obs field
+    """
+    # adata_all = anndata.read_h5ad('./data/32801_resolve_adata.h5ad')
+    annotation = np.load(annotation_file)
+    region_names = pd.read_csv(region_names_file)
+
+    cell_annotation = adata.obsm['spatial'].progress_apply(lambda row: get_region_annotation(row, annotation, region_names), axis=1)
+    adata.obs = adata.obs.join(cell_annotation, how='left')
+
+    return adata
