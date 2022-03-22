@@ -1,4 +1,5 @@
 import argparse
+from cmath import exp
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -56,7 +57,7 @@ class AnnotationGUI(object):
         self.gene_df = self._read_gene(
             os.path.join(datadir, f'{experiment_id}-slide{slide}_submission/{experiment_id}-slide{slide}_{position}_results.txt'))
 
-        self.gene_list = adata.var.index.tolist()
+        self.gene_list = adata.var.reset_index()['gene'].tolist()
         self.adata = adata
 
     @staticmethod
@@ -88,10 +89,11 @@ class AnnotationGUI(object):
         """
 
         @magicgui(auto_call=True,
-                gene={"choices": self.gene_list})
-        def add_gene_layer(gene='Cck') -> LayerDataTuple:
+                gene={"choices": self.gene_list, 'label': 'gene (single mRNA)'})
+        def add_gene_layer(gene) -> LayerDataTuple:
             """
             Adds a slected gene to the plot
+            Each point is a mRNA transcript
             The layer could be deleted from the GUI later
             """
             gene_palette = sns.color_palette('pastel')
@@ -103,6 +105,36 @@ class AnnotationGUI(object):
             points_properties = {'name': gene, 
                                 'face_color': gene_color, 
                                 'size': 10}
+            return points_data, points_properties, 'points'
+
+        @magicgui(auto_call=True,
+                gene={'choices': self.gene_list, 'label': 'gene (per cell)'},
+                linear_log={'choices': ['linear', 'log']})
+        def add_gene_expression_layer(gene, linear_log='log') -> LayerDataTuple:
+            """
+            Adds a slected gene to the plot
+            Each point is a cell
+            The layer could be deleted from the GUI later
+            """
+            gene_palette = sns.color_palette('pastel')
+            
+            is_in_slice = self.adata.obs.eval(f'slide == "{self.slide_str}" & slice == "{self.position_str}"')
+            points_data = self.adata.obsm['spatial'][is_in_slice].loc[mask,:] / self.ds_int
+            cell_size = np.sqrt(self.adata.obs[is_in_slice].area)
+            cell_size = 25 * cell_size / np.max(cell_size)
+            expression_level = self.adata.X[is_in_slice, self.adata.var.index == gene]
+            if linear_log == 'linear':
+                expression_level = (expression_level / np.max(expression_level))
+            elif linear_log == 'log':
+                expression_level = np.log(expression_level + 1)
+
+            properties = {'expression_level': expression_level}
+            points_properties = {'name': gene,
+                                'properties': properties,
+                                'face_color': 'expression_level',
+                                'face_colormap': 'plasma',
+                                'size': cell_size,
+                                'edge_width': 0.0}
             return points_data, points_properties, 'points'
 
 
@@ -143,6 +175,7 @@ class AnnotationGUI(object):
 
         viewer.window.add_dock_widget(table_widget)
         viewer.window.add_dock_widget(add_gene_layer)
+        viewer.window.add_dock_widget(add_gene_expression_layer)
         viewer.window.add_dock_widget(save_region)
         viewer.window.add_dock_widget(load_region)
 

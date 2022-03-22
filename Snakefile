@@ -47,5 +47,5 @@ rule run_baysor:
     shell:
         """
         scripts/add_header.sh {input}
-        {config[baysor]} run -s {params.scale} --scale-std={params.scale_std} -c config/config.toml -p --exclude-genes={params.exclude_genes} --force-2d -o {params.outdir} {input}
+        {config[baysor]} run -s {params.scale} --scale-std={params.scale_std} -c config/config.toml -p --exclude-genes={params.exclude_genes} --force-2d --save-polygons=geojson -o {params.outdir} {input}
         """
