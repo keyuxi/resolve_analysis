@@ -11,6 +11,7 @@ import anndata
 
 import napari
 from skimage.io import imread
+from skimage.transform import rescale
 from dask import delayed
 from anndata import AnnData
 from napari.types import ImageData, PointsData, LabelsData, LayerDataTuple
@@ -69,7 +70,7 @@ class AnnotationGUI(object):
         reader = lazy_imread(dapi_file)  # doesn't actually read the file
         dapi = reader.compute()  # *now* it reads.
         
-        return dapi[::ds, ::ds]
+        return rescale(dapi, scale=1/ds, anti_aliasing=True)
 
     @staticmethod
     def _read_gene(gene_file):
