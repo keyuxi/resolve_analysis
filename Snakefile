@@ -20,50 +20,55 @@ slide_dict = {slide:
      "dapi": expand(os.path.join(DATADIR, slide, "%s_{tile}_DAPI.tiff"%slide), tile=TILES)} 
     for slide in SLIDES}
 
-print("\nslide_dict: \n", slide_dict, "\n\n")
+# print("\nslide_dict: \n", slide_dict, "\n\n")
 
 
 # --- Define Required Output --- #
 
 rule all:
     input:
-        # expand(DATADIR + "segmentation_{slide}/{tile}/segmentation_counts.tsv", slide=slide_dict.keys(), tile=TILES)
-        DATADIR + "cellpose_32801-slideC/cellpose_mask_A1.tiff"
+        expand(DATADIR + "segmentation_with_nuclei_prior_{slide}/{tile}/segmentation_counts.tsv", slide=slide_dict.keys(), tile=TILES)
+        # DATADIR + "cellpose_32801-slideC/cellpose_mask_A2.tiff"
 
 # --- Rules --- #
 
 rule run_cellpose:
     input:
-        os.path.join(DATADIR, "{slide}", "%s_{tile}_DAPI.tiff"%slide)
+        os.path.join(DATADIR, "{slide}", "{slide}_{tile}_DAPI.tiff")
     output:
         DATADIR + "cellpose_{slide}/cellpose_mask_{tile}.tiff"
+    threads:
+        1
     params:
-        diameter = 65,
-        mask_threshold = 0.2
+        diameter = "65",
+        mask_threshold = "-0.1",
         cluster_memory = "32G"
     conda:
-        "envs/cellpose.yml"
+        "envs/cellpose_export.yml"
+        # Had to manually install pytorch then export
+        # because it runs out of memory on sherlock using pip
+        # and need to tell it's cpuonly
     shell:
         """
-        python scripts/cellpose.py \
-            --diameter {params.diameter} --mask_threshold {mask_threshold} \
+        python resolve/run_cellpose.py \
+            --diameter {params.diameter} --mask_threshold {params.mask_threshold} \
             -i {input} -o {output}
         """
 
 rule run_baysor:
     input:
         molecules = DATADIR + "{slide}/{slide}_{tile}_results.txt",
-        dapi_seg = DATADIR + "cellpose_{slide}/cellpose_mask_{tile}.tif"
+        dapi_seg = DATADIR + "cellpose_{slide}/cellpose_mask_{tile}.tiff"
     output:
-        DATADIR + "segmentation_{slide}/{tile}/segmentation_counts.tsv"
+        DATADIR + "segmentation_with_nuclei_prior_{slide}/{tile}/segmentation_counts.tsv"
     threads:
         1
     params:
         scale = "45.0",
         scale_std = "50%",
         exclude_genes = "'Adra2a'",
-        prior_segmentation_confidence = "0.2",
-        outdir = DATADIR + "segmentation_{slide}/{tile}",
+        prior_segmentation_confidence = "0.5",
+        outdir = DATADIR + "segmentation_with_nuclei_prior_{slide}/{tile}",
         cluster_memory = "16G",
         cluster_time = "02:00:00"
     shell:
