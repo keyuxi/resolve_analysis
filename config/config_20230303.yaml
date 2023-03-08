@@ -1,0 +1,14 @@
+# === Experiment-dependent configurations === #
+dataDir:
+    /home/users/kyx/oak/data/spatial/
+slides:
+    # directories where all the resolve results files are located
+    # one for each slide
+    # relative to dataDir
+    # also the prefix to file names
+    - P22344_slideF4_20230221
+
+# ====== Environment Configurations =====
+baysor:
+    # location of the baysor executable
+    /home/users/kyx/oak/software/singularity/baysor_v0.0.sif
