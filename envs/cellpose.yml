@@ -1,14 +1,21 @@
 name: cellpose
+channels:
+  - pytorch
 dependencies:
   - python==3.8.5
   - pip
+  - matplotlib
+  - scikit-image
+  - torch>=1.6
+  - tourchvision
+  - torchaudio
+  - cpuonly
+  - numpy>=1.20.0
+  - numba>=0.43.1
+  - scipy
   - pip:
     - PyQt5
     - PyQt5.sip
-    - numpy>=1.20.0
-    - numba>=0.43.1
-    - scipy
-    - torch>=1.6
     - opencv-python-headless
     - pyqtgraph>=0.11.0rc0
     - natsort
