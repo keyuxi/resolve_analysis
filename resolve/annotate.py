@@ -29,7 +29,7 @@ parser.add_argument('-s', '--slide', default='C', help='The slide to plot, e.g. 
 parser.add_argument('-p', '--position', default='A1', help='The position on the slide to plot, A1 to D2')
 parser.add_argument('-d', '--datadir', required=True, help='The main data directory containing resolve data, e.g. ./data/')
 parser.add_argument('-a', '--adata', help='The anndata file, for cell cluster visualization')
-parser.add_argument('--experiment_id', default='32801', help='ID of resolve experiment, for parsing file names')
+parser.add_argument('--experiment_id', default='P22344', help='ID of resolve experiment, for parsing file names')
 parser.add_argument('--region_names', default='./region_names.csv', help='A file containing the hierarchical names of the regions to be annotated.')
 
 def get_rgba(i):
@@ -45,18 +45,18 @@ class AnnotationGUI(object):
     def __init__(self,
         adata, region_df,
         datadir='~/workspace/resolve/data',
-        slide='C', position='A1', experiment_id='32801',
-        ds=10):
+        slide='M2', position='D1-1', experiment_id='P22344',
+        ds=1):
         
         self.slide_str = slide
         self.position_str = position
         self.ds_int = ds
         self.region_df = region_df
 
-        self.dapi_array = self._read_dapi(
-            os.path.join(datadir, f'{experiment_id}-slide{slide}_submission/{experiment_id}-slide{slide}_{position}_DAPI.tiff'), ds=ds)
+        # self.dapi_array = self._read_dapi(
+        #     os.path.join(datadir, f'{experiment_id}-slide{slide}/{experiment_id}-slide{slide}_{position}_DAPI.tiff'), ds=ds)
         self.gene_df = self._read_gene(
-            os.path.join(datadir, f'{experiment_id}-slide{slide}_submission/{experiment_id}-slide{slide}_{position}_results.txt'))
+            os.path.join(datadir, f'{experiment_id}-slide{slide}/{experiment_id}-slide{slide}_{position}_results.txt'))
 
         self.gene_list = adata.var.reset_index()['gene'].tolist()
         self.adata = adata
@@ -167,9 +167,11 @@ class AnnotationGUI(object):
         cell_clusters = self.adata.obs.loc[mask,'clusters']
         cell_colors = [get_rgba(i) for i in cell_clusters]
 
-        viewer = napari.view_image(adjust_image(self.dapi_array))
-        cell_cluster_layer = viewer.add_points(cell_coordinate, symbol='square', face_color=cell_colors, shading='none', name='Cell clusters')
-        labels_layer = viewer.add_labels(np.zeros_like(self.dapi_array), name='Regions')
+        # viewer = napari.view_image(adjust_image(self.dapi_array))
+        # cell_cluster_layer = viewer.add_points(cell_coordinate, symbol='square', face_color=cell_colors, name='Cell clusters')
+        viewer = napari.view_points(cell_coordinate, symbol='square', face_color=cell_colors, name='Cell clusters')
+        
+        labels_layer = viewer.add_labels(np.zeros_like(self.dapi_array, dtype=int), name='Regions')
 
         labels_layer.features = self.region_df#pd.DataFrame(['BLA', 'CeA'], columns=['Region'])
         table_widget = widgets.Table(labels_layer.features)
@@ -193,7 +195,7 @@ if __name__ == "__main__":
 
     adata_file = args.adata
     if adata_file is None:
-        adata_file = os.path.join(args.datadir, f'{args.experiment_id}_resolve_adata.h5ad')
+        adata_file = os.path.join(args.datadir, 'adata', f'{args.experiment_id}_adata.h5ad')
     adata = anndata.read_h5ad(adata_file)
     region_df = pd.read_csv(args.region_names)
 

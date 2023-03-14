@@ -9,16 +9,31 @@ import seaborn as sns
 import scipy.stats as stats
 from skimage.io import imread
 from tqdm import tqdm
+from matplotlib.backends.backend_pdf import PdfPages
+
 tqdm.pandas()
 sns.set_style('ticks')
 sns.set_context('paper')
 
 def save_fig(filename, fig=None):
+
+    figdir, _ = os.path.split(filename)
+    if not os.path.isdir(figdir):
+        os.makedirs(figdir)
+
     if fig is None:
         plt.savefig(filename, dpi=300, bbox_inches='tight')
     else:
         fig.savefig(filename, dpi=300, bbox_inches='tight')
 
+
+def save_multi_image(filename):
+    pp = PdfPages(filename)
+    fig_nums = plt.get_fignums()
+    figs = [plt.figure(n) for n in fig_nums]
+    for fig in figs:
+        fig.savefig(pp, format='pdf')
+    pp.close()
 
 def adjust_image(image, down_sample=1):
     return np.rot90(np.fliplr(image[::down_sample, ::down_sample]), k=1)
@@ -89,7 +104,7 @@ def count_gene_slide(samples, gene, adata_all, slide='C', use_raw=True, percenti
     save_fig(figname, fig)
 
 
-def read_cell_data(cell):
+def read_cell_data(cell, segmentation_dir_prefix='segmentation'):
     """
     Returns cropped DAPI, raw and molecule arrays from cell name,
     eg. '3031-slideC_C1'
@@ -103,10 +118,10 @@ def read_cell_data(cell):
     cell_id = int(cell.split('-')[0])
     slide, tile = cell.split('-')[1].split('_')
 
-    segmentation_dir = './data/segmentation_32801-%s/%s'%(slide, tile)
+    segmentation_dir = './data/%s_32801-%s/%s'%(segmentation_dir_prefix, slide, tile)
     spot_file = os.path.join(segmentation_dir, 'segmentation.csv')
     cell_stats_file = os.path.join(segmentation_dir, 'segmentation_cell_stats.csv')
-    raw_data_dir = './data/32801-%s_submission'%slide
+    raw_data_dir = './data/32801-%s'%slide
     dapi_file = os.path.join(raw_data_dir, '32801-%s_%s_DAPI.tiff'%(slide, tile))
     raw_file = os.path.join(raw_data_dir, '32801-%s_%s_raw.tiff'%(slide, tile))
 
@@ -132,8 +147,8 @@ def read_cell_data(cell):
     return cell_stat, spot, spots, dapi, raw, (xmin, xmax, ymin, ymax)
 
 
-def plot_cell(cell):
-    cell_stat, spot, spots, dapi, raw, crop_ind = read_cell_data(cell)
+def plot_cell(cell, segmentation_dir_prefix='segmentation'):
+    cell_stat, spot, spots, dapi, raw, crop_ind = read_cell_data(cell, segmentation_dir_prefix)
     fig, ax = plt.subplots(1, 3, figsize=(12,4), sharey=True, sharex=True)
     # sns.scatterplot(y=spot.x-crop_ind[2], x=spot.y-crop_ind[0], hue=spot.gene, palette='tab20', ax=ax[0])
     # if len(np.unique(spot.gene)) > 10:
