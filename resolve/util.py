@@ -10,7 +10,7 @@ import scipy.stats as stats
 from skimage.io import imread
 from tqdm import tqdm
 from matplotlib.backends.backend_pdf import PdfPages
-
+from anndata import AnnData
 tqdm.pandas()
 sns.set_style('ticks')
 sns.set_context('paper')
@@ -34,6 +34,22 @@ def save_multi_image(filename):
     for fig in figs:
         fig.savefig(pp, format='pdf')
     pp.close()
+
+def read_adata(segmentation_dir):
+    """
+    Returns adata object from segmentation output dir of
+    a single tile, e.g. A1
+    """
+    count_file = os.path.join(segmentation_dir, 'segmentation_counts.tsv')
+    cell_stats_file = os.path.join(segmentation_dir, 'segmentation_cell_stats.csv')
+    
+    anno = pd.read_csv(cell_stats_file, index_col='cell')
+    anno.index = anno.index.astype(str)
+    X = pd.read_csv(count_file, sep='\t', index_col='gene').T
+    adata = AnnData(X=X,
+                    obs=anno.iloc[:,2:], layers={'raw': X})
+    adata.obsm['spatial'] = anno.loc[:,['x','y']]
+    return adata
 
 def adjust_image(image, down_sample=1):
     return np.rot90(np.fliplr(image[::down_sample, ::down_sample]), k=1)
@@ -158,6 +174,10 @@ def plot_cell(cell, segmentation_dir_prefix='segmentation'):
     ax[1].imshow(np.rot90(dapi), cmap='gray')
     ax[2].imshow(np.rot90(raw), cmap='gray')
 
+"""
+Functions to help load region segmentation .npy files from the gui
+back into anndata
+"""
 
 def get_region_annotation(spatial, annotation, region_names):
     """
@@ -171,20 +191,43 @@ def get_region_annotation(spatial, annotation, region_names):
     region_id = annotation[idx, idy]
     return region_names.loc[region_id,:]
 
-def add_region_annotation_to_adata(adata, annotation_file, region_names_file):
+def add_region_annotation_to_adata(adata, annotation_file, region_names_file, sample_name=None):
     """
     Args:
         adata - Anndata object
         annotation_file - e.g. './resolve_analysis/resolve/slideC_A1.npy'
         regions_names_file - e.g. './resolve_analysis/resolve/region_names.csv'
+        sample - str, name of the sample to annotate to. Matches adata.obs.sample
+            !!! If not provided, assume all cells are on the same slide (dangerous)
     Returns:
         adata - Anndata object with updated adata.obs field
     """
     # adata_all = anndata.read_h5ad('./data/32801_resolve_adata.h5ad')
     annotation = np.load(annotation_file)
     region_names = pd.read_csv(region_names_file)
+    
+    if sample_name is None:
+        adata_slide = adata.copy()
+    else:
+        adata_slide = adata[adata.obs['sample'] == sample_name]
+        
+    cell_annotation = adata_slide.obsm['spatial'].progress_apply(lambda row: get_region_annotation(row, annotation, region_names), axis=1)
+    adata_slide.obs = adata_slide.obs.join(cell_annotation, how='left')
 
-    cell_annotation = adata.obsm['spatial'].progress_apply(lambda row: get_region_annotation(row, annotation, region_names), axis=1)
-    adata.obs = adata.obs.join(cell_annotation, how='left')
-
-    return adata
+    return adata_slide
+    
+"""
+*may be useless
+anndata helper functions
+"""
+def get_gene_idx(adata, gene):
+    if not gene in adata.var.index:
+        print("gene %s not in adata" % gene)
+        return np.nan
+        
+    idx = np.argmax(adata.var.index == gene)
+    return idx
+    
+def get_gex_vec(adata, gene):
+    idx = get_gene_idx(adata, gene)
+    return adata.X[:,idx]

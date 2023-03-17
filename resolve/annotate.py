@@ -46,8 +46,9 @@ class AnnotationGUI(object):
         adata, region_df,
         datadir='~/workspace/resolve/data',
         slide='M2', position='D1-1', experiment_id='P22344',
-        ds=1):
+        ds=10):
         
+        self.datadir = datadir
         self.slide_str = slide
         self.position_str = position
         self.ds_int = ds
@@ -60,6 +61,10 @@ class AnnotationGUI(object):
 
         self.gene_list = adata.var.reset_index()['gene'].tolist()
         self.adata = adata
+        
+        region_anno_dir = os.path.join(datadir, 'region_annotation')
+        if not os.path.isdir(region_anno_dir):
+            os.makedirs(region_anno_dir)
 
     @staticmethod
     def _read_dapi(dapi_file, ds=10):
@@ -74,7 +79,7 @@ class AnnotationGUI(object):
 
     @staticmethod
     def _read_gene(gene_file):
-        X = pd.read_csv(gene_file, sep='\t', header=None).iloc[:,:-1]
+        X = pd.read_csv(gene_file, sep='\t', index_col=False)
         X.columns=['x','y','z','gene']
         return X
 
@@ -90,7 +95,7 @@ class AnnotationGUI(object):
         """
 
         @magicgui(auto_call=True,
-                gene={"choices": self.gene_list, 'label': 'gene (single mRNA)'})
+                gene={"choices": self.gene_list, 'label': 'gene'})
         def add_gene_layer(gene) -> LayerDataTuple:
             """
             Adds a slected gene to the plot
@@ -142,13 +147,13 @@ class AnnotationGUI(object):
         @magicgui(call_button='Save regions',
             filename={'widget_type': 'FileEdit'})
         def save_region(region_layer:LabelsData,
-                        filename=os.path.join(pathlib.Path.cwd(), f'slide{self.slide_str}_{self.position_str}')) -> None:
+                        filename=os.path.join(self.datadir, 'region_annotation', f'slide{self.slide_str}_{self.position_str}')) -> None:
             np.save(filename, region_layer)
 
 
         @magicgui(call_button='Load regions',
             filename={'widget_type': 'FileEdit'})
-        def load_region(filename=os.path.join(pathlib.Path.cwd(), f'slide{self.slide_str}_{self.position_str}.npy')) -> LayerDataTuple:
+        def load_region(filename=os.path.join(self.datadir, 'region_annotation', f'slide{self.slide_str}_{self.position_str}.npy')) -> LayerDataTuple:
             """
             Loads a npy file to the 'Regions' layer
             """
@@ -164,14 +169,16 @@ class AnnotationGUI(object):
         mask = self.adata.obs['sample'] == 'slide%s_%s' % (self.slide_str, self.position_str)
 
         cell_coordinate = self.adata.obsm['spatial'].loc[mask,:] / self.ds_int
+        x_shape, y_shape = int(np.ceil(np.max(cell_coordinate.x))), int(np.ceil(np.max(cell_coordinate.y)))
         cell_clusters = self.adata.obs.loc[mask,'clusters']
         cell_colors = [get_rgba(i) for i in cell_clusters]
 
         # viewer = napari.view_image(adjust_image(self.dapi_array))
         # cell_cluster_layer = viewer.add_points(cell_coordinate, symbol='square', face_color=cell_colors, name='Cell clusters')
-        viewer = napari.view_points(cell_coordinate, symbol='square', face_color=cell_colors, name='Cell clusters')
+        viewer = napari.view_points(cell_coordinate, symbol='square', size=10, face_color=cell_colors, name='Cell clusters')
         
-        labels_layer = viewer.add_labels(np.zeros_like(self.dapi_array, dtype=int), name='Regions')
+        # labels_layer = viewer.add_labels(np.zeros_like(self.dapi_array, dtype=int), name='Regions')
+        labels_layer = viewer.add_labels(np.zeros((x_shape, y_shape), dtype=int), name='Regions')
 
         labels_layer.features = self.region_df#pd.DataFrame(['BLA', 'CeA'], columns=['Region'])
         table_widget = widgets.Table(labels_layer.features)
