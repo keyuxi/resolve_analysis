@@ -25,9 +25,9 @@ sns.set_context('paper')
 from util import *
 
 parser = argparse.ArgumentParser(description='Launch a GUI to manually annotate regions')
+parser.add_argument('-d', '--datadir', required=True, help='The main data directory containing resolve data, ideally absolute path, e.g. [...]/data/')
 parser.add_argument('-s', '--slide', default='C', help='The slide to plot, e.g. C or D')
 parser.add_argument('-p', '--position', default='A1', help='The position on the slide to plot, A1 to D2')
-parser.add_argument('-d', '--datadir', required=True, help='The main data directory containing resolve data, e.g. ./data/')
 parser.add_argument('-a', '--adata', help='The anndata file, for cell cluster visualization')
 parser.add_argument('--experiment_id', default='P22344', help='ID of resolve experiment, for parsing file names')
 parser.add_argument('--region_names', default='./region_names.csv', help='A file containing the hierarchical names of the regions to be annotated.')
@@ -57,7 +57,7 @@ class AnnotationGUI(object):
         # self.dapi_array = self._read_dapi(
         #     os.path.join(datadir, f'{experiment_id}-slide{slide}/{experiment_id}-slide{slide}_{position}_DAPI.tiff'), ds=ds)
         self.gene_df = self._read_gene(
-            os.path.join(datadir, f'{experiment_id}-slide{slide}/{experiment_id}-slide{slide}_{position}_results.txt'))
+            os.path.join(datadir, f'segmentation_{experiment_id}-slide{slide}/{position}/segmentation.csv'))
 
         self.gene_list = adata.var.reset_index()['gene'].tolist()
         self.adata = adata
@@ -79,8 +79,8 @@ class AnnotationGUI(object):
 
     @staticmethod
     def _read_gene(gene_file):
-        X = pd.read_csv(gene_file, sep='\t', index_col=False)
-        X.columns=['x','y','z','gene']
+        X = pd.read_table(gene_file, sep=',')
+        X = X.query("~ is_noise")
         return X
 
 
