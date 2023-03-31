@@ -54,6 +54,8 @@ class AnnotationGUI(object):
         self.ds_int = ds
         self.region_df = region_df
 
+        self.points_range = (None, None)
+
         # self.dapi_array = self._read_dapi(
         #     os.path.join(datadir, f'{experiment_id}-slide{slide}/{experiment_id}-slide{slide}_{position}_DAPI.tiff'), ds=ds)
         self.gene_df = self._read_gene(
@@ -83,6 +85,18 @@ class AnnotationGUI(object):
         X = X.query("~ is_noise")
         return X
 
+    def _get_gene_exp(self, gene, linear_log='log'):
+        is_in_slice = self.adata.obs.eval(f'slide == "{self.slide_str}" & slice == "{self.position_str}"')
+        points_data = self.adata.obsm['spatial'][is_in_slice] / self.ds_int
+        cell_size = np.sqrt(self.adata.obs[is_in_slice].area)
+        cell_size = 25 * cell_size / np.max(cell_size)
+        expression_level = self.adata.X[is_in_slice, self.adata.var.index == gene]
+        if linear_log == 'linear':
+            expression_level = (expression_level / np.max(expression_level))
+        elif linear_log == 'log':
+            expression_level = np.log(expression_level + 1)
+            
+        return dict(points_data=points_data, expression_level=expression_level, cell_size=cell_size)
 
     def run(self):
         """
@@ -95,7 +109,7 @@ class AnnotationGUI(object):
         """
 
         @magicgui(auto_call=True,
-                gene={"choices": self.gene_list, 'label': 'gene'})
+                gene={"choices": self.gene_list, 'label': 'gene (per spot)'})
         def add_gene_layer(gene) -> LayerDataTuple:
             """
             Adds a slected gene to the plot
@@ -124,25 +138,59 @@ class AnnotationGUI(object):
             """
             gene_palette = sns.color_palette('pastel')
             
-            is_in_slice = self.adata.obs.eval(f'slide == "{self.slide_str}" & slice == "{self.position_str}"')
-            points_data = self.adata.obsm['spatial'][is_in_slice].loc[mask,:] / self.ds_int
-            cell_size = np.sqrt(self.adata.obs[is_in_slice].area)
-            cell_size = 25 * cell_size / np.max(cell_size)
-            expression_level = self.adata.X[is_in_slice, self.adata.var.index == gene]
-            if linear_log == 'linear':
-                expression_level = (expression_level / np.max(expression_level))
-            elif linear_log == 'log':
-                expression_level = np.log(expression_level + 1)
+            gene_dict = self._get_gene_exp(gene, linear_log=linear_log)
+            points_data = gene_dict['points_data']
 
-            properties = {'expression_level': expression_level}
+            properties = {'expression_level': gene_dict['expression_level']}
             points_properties = {'name': gene,
                                 'properties': properties,
                                 'face_color': 'expression_level',
-                                'face_colormap': 'plasma',
-                                'size': cell_size,
+                                'face_colormap': 'inferno',
+                                'size': gene_dict['cell_size'],
                                 'edge_width': 0.0}
             return points_data, points_properties, 'points'
 
+        @magicgui(call_button='Show coexpression',
+                  geneA={'choices': self.gene_list, 'label': 'gene A (magenta)'},
+                  geneB={'choices': self.gene_list, 'label': 'gene B (green)'},
+                  cell_size_mode={'choices': ['fixed', 'actual'], 'label': 'cell size mode'})
+        def add_gene_coexpression_layer(geneA, geneB, cell_size_mode='actual') -> LayerDataTuple:
+            """
+            Adds 2 genes and plot coexpression in 2 colors
+            """
+            def render_coexp_color(geneA_dict, geneB_dict):
+                """
+                Normalize **log transformed** expression level
+                Returns:
+                    face_color - (n_cell, 3) array, RGB
+                """
+                gene_coexp_colors = {'magenta': np.array([1,0,1]), 'green': np.array([0,1,0])}
+                epsilon = 1e-3
+                normexp = (geneA_dict['expression_level'] / np.maximum(np.percentile(geneA_dict['expression_level'], 99.9), epsilon),
+                           geneB_dict['expression_level'] / np.maximum(np.percentile(geneB_dict['expression_level'], 99.9), epsilon))
+                normexp = np.clip(normexp, 0, 1)
+                face_color = (normexp[0].reshape(-1,1) * gene_coexp_colors['magenta'].reshape(1,3) +
+                              normexp[1].reshape(-1,1) * gene_coexp_colors['green'].reshape(1,3))
+                return face_color
+                
+            geneA_dict = self._get_gene_exp(geneA)
+            geneB_dict = self._get_gene_exp(geneB)
+            
+            ## face_color - (n_cell, 3) array, RGB ##
+            face_color = render_coexp_color(geneA_dict, geneB_dict)
+            points_data = geneA_dict['points_data']
+            if cell_size_mode == 'actual':
+                cell_size = geneA_dict['cell_size']
+            elif cell_size_mode == 'fixed':
+                cell_size = 15
+                
+            points_properties = {'name': '%s & %s' % (geneA, geneB),
+                    'face_color': face_color,
+                    'size': cell_size,
+                    'edge_width': 0.0}
+            
+            return points_data, points_properties, 'points'
+            
 
         @magicgui(call_button='Save regions',
             filename={'widget_type': 'FileEdit'})
@@ -175,19 +223,33 @@ class AnnotationGUI(object):
 
         # viewer = napari.view_image(adjust_image(self.dapi_array))
         # cell_cluster_layer = viewer.add_points(cell_coordinate, symbol='square', face_color=cell_colors, name='Cell clusters')
-        viewer = napari.view_points(cell_coordinate, symbol='square', size=10, face_color=cell_colors, name='Cell clusters')
+        viewer = napari.view_image(0.1 * np.ones((x_shape, y_shape)), name='Background')
+        cell_cluster_layer = viewer.add_points(cell_coordinate, symbol='square', size=10, face_color=cell_colors, name='Cell clusters')
         
         # labels_layer = viewer.add_labels(np.zeros_like(self.dapi_array, dtype=int), name='Regions')
         labels_layer = viewer.add_labels(np.zeros((x_shape, y_shape), dtype=int), name='Regions')
 
-        labels_layer.features = self.region_df#pd.DataFrame(['BLA', 'CeA'], columns=['Region'])
+        labels_layer.features = self.region_df
         table_widget = widgets.Table(labels_layer.features)
 
         viewer.window.add_dock_widget(table_widget)
         viewer.window.add_dock_widget(add_gene_layer)
         viewer.window.add_dock_widget(add_gene_expression_layer)
+        viewer.window.add_dock_widget(add_gene_coexpression_layer)
         viewer.window.add_dock_widget(save_region)
         viewer.window.add_dock_widget(load_region)
+
+        # Shortcut to close the gui window
+        @viewer.bind_key('q')
+        def goodbye(viewer):
+            print('Goodbye world!')
+            viewer.close()
+            
+        # Hook up the points layer to the colorbar
+        def print_layer_name(event):
+            print(f"Active layer changed!")
+            
+        # viewer.layers.events.selection.events.active.connect(print_layer_name)
 
         # keep the dropdown menus in the gui in sync with the layer model
         viewer.layers.events.inserted.connect(add_gene_layer.reset_choices)
@@ -195,6 +257,13 @@ class AnnotationGUI(object):
 
         napari.run()
 
+
+# @viewer.bind_key('b')
+# def add_colorbar(viewer):
+#     if viewer.points_range[0] is not None:
+#         fig, ax = plt.subplots()
+#         plt.colorbar(boundaries=self.points_range, ax=ax)
+#         plt.show()
 
 if __name__ == "__main__":
 
