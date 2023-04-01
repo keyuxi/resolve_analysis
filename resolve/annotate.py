@@ -127,10 +127,11 @@ class AnnotationGUI(object):
                                 'size': 10}
             return points_data, points_properties, 'points'
 
-        @magicgui(auto_call=True,
+        @magicgui(call_button='Show single gene expression',
                 gene={'choices': self.gene_list, 'label': 'gene (per cell)'},
-                linear_log={'choices': ['linear', 'log']})
-        def add_gene_expression_layer(gene, linear_log='log') -> LayerDataTuple:
+                linear_log={'choices': ['linear', 'log']},
+                show_cmap={'label': 'show color map'})
+        def add_gene_expression_layer(gene, linear_log: str='log', show_cmap: bool=True) -> LayerDataTuple:
             """
             Adds a slected gene to the plot
             Each point is a cell
@@ -148,6 +149,15 @@ class AnnotationGUI(object):
                                 'face_colormap': 'inferno',
                                 'size': gene_dict['cell_size'],
                                 'edge_width': 0.0}
+            
+            fig, ax = plt.subplots()
+            norm = plt.Normalize(np.min(gene_dict['expression_level']), np.max(gene_dict['expression_level']))
+            sm = plt.cm.ScalarMappable(cmap='inferno', norm=norm)
+            sm.set_array([])
+            ax.figure.colorbar(sm, ax=ax, orientation='horizontal',
+                               format='%.1f', label='log(count + 1)')    
+            ax.set_title(gene)
+            plt.show()
             return points_data, points_properties, 'points'
 
         @magicgui(call_button='Show coexpression',
@@ -239,11 +249,11 @@ class AnnotationGUI(object):
         viewer.window.add_dock_widget(save_region)
         viewer.window.add_dock_widget(load_region)
 
-        # Shortcut to close the gui window
-        @viewer.bind_key('q')
-        def goodbye(viewer):
-            print('Goodbye world!')
-            viewer.close()
+        # # Shortcut to close the gui window
+        # @viewer.bind_key('q')
+        # def goodbye(viewer):
+        #     print('Goodbye world!')
+        #     viewer.close()
             
         # Hook up the points layer to the colorbar
         def print_layer_name(event):
